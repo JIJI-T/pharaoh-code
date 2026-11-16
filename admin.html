@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>파라오 코드 · 교사(방장) 화면</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=5">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="config.js"></script>
-<script src="store.js"></script>
-<script src="common.js"></script>
+<script src="config.js?v=5"></script>
+<script src="store.js?v=5"></script>
+<script src="common.js?v=5"></script>
 </head>
 <body>
 
@@ -118,6 +118,17 @@
   $("roll").onclick = async () => {
     if (!R || !R.gameId || R.status === "ended") return alert("먼저 ‘새 게임 열기’를 눌러 주세요.");
     $("roll").disabled = true;
+    // 지난 라운드에 한 명이라도 가져간 타일은 같은 색 더미에서 새로 뽑기
+    await Store.transaction("board", b => {
+      if (!b) return b;
+      const c = b.c || {};
+      for (const k in c) {
+        const i = parseInt(k.slice(1));
+        if (c[k] && c[k].t === b.s[i] && c[k].by && Object.keys(c[k].by).length) PC.refill(b, i);
+      }
+      b.c = {};
+      return b;
+    });
     await Store.update("room", { round: (R.round || 0) + 1, dice: PC.rollDice(), roundStart: Store.ts(), timeLimit: timeLimit(), tileCap: tileCap(), status: "playing" });
     setTimeout(() => { $("roll").disabled = false; }, 800);
   };
