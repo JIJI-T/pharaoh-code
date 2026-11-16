@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>파라오 코드 · 교사(방장) 화면</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="config.js?v=5"></script>
-<script src="store.js?v=5"></script>
-<script src="common.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="store.js?v=6"></script>
+<script src="common.js?v=6"></script>
 </head>
 <body>
 
@@ -25,11 +25,28 @@
   </div>
 </section>
 
+<section id="lobby" class="screen">
+  <div class="card center">
+    <div class="logo">🏛️</div>
+    <h1>방 만들기</h1>
+    <p class="sub">방을 만들면 학생들이 입력할 4자리 방 코드가 생겨요.</p>
+    <button id="createRoom" class="btn gold">＋ 새 방 만들기</button>
+    <p class="orLine">또는 이미 만든 방 다시 열기</p>
+    <label>방 코드<input id="reopenCode" type="text" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+    <p id="lobbyMsg" class="msg bad"></p>
+    <button id="reopen" class="btn ghost">다시 열기</button>
+    <p id="live2" class="note"></p>
+  </div>
+</section>
+
 <section id="board" class="screen">
   <div class="admin">
     <div class="bar">
       <h1>🔺 학급 플레이 · 방장</h1>
+      <div class="roomCode">방 코드 <b id="roomCode">----</b></div>
       <span id="live" class="liveTag"></span>
+      <button id="leaveRoom" class="sbtn gray">방 나가기</button>
+      <button id="closeRoom" class="sbtn red">방 닫기</button>
     </div>
 
     <div class="ctrl">
@@ -49,7 +66,7 @@
         <button id="stopRound" class="sbtn gray">⏹ 라운드 종료</button>
         <button id="endGame" class="sbtn red">🏁 게임 끝내기</button>
       </div>
-      <p class="hint">새 게임 열기 → 학생들이 ‘학급 플레이’로 입장 → 주사위 굴리기를 누를 때마다 새 라운드가 시작돼요.</p>
+      <p class="hint">학생들이 ‘학급 플레이’에서 방 코드를 입력해 입장 → 주사위 굴리기를 누를 때마다 새 라운드가 시작돼요. ‘새 게임 열기’는 같은 방에서 점수와 타일을 처음부터 다시 시작해요.</p>
     </div>
 
     <div class="stats">
@@ -77,26 +94,84 @@
 <script>
 (function () {
   const C = window.APP_CONFIG, $ = id => document.getElementById(id);
-  let R = null, PL = {}, BD = null;
+  let R = null, PL = {}, BD = null, shownRound = null;
+
+  let RP = "", CODE = null, offs = [];   // RP = 방 데이터 경로 "rooms/1234/"
+  const P = k => RP + k;
+  const show = id => { document.querySelectorAll(".screen").forEach(s => s.classList.remove("active")); $(id).classList.add("active"); };
 
   function open() {
-    $("gate").classList.remove("active"); $("board").classList.add("active");
-    $("live").textContent = Store.online ? "● 실시간 연결됨" : "체험 모드(이 브라우저만)";
+    $("live").textContent = $("live2").textContent = Store.online ? "● 실시간 연결됨" : "체험 모드(이 브라우저만)";
     $("setTime").value = C.CLASS_SECONDS; $("setCap").value = C.CLASS_TILE_CAP;
     PC.buildPyramid($("aPyramid"));
-    Store.on("room", r => {
+    setInterval(tick, 250);
+    const saved = sessionStorage.getItem("pc_room");
+    if (saved) Store.get("rooms/" + saved + "/room").then(r => r ? enterRoom(saved) : show("lobby"));
+    else show("lobby");
+  }
+
+  function enterRoom(code) {
+    offs.forEach(f => f()); offs = [];
+    CODE = code; RP = "rooms/" + code + "/"; R = null; PL = {}; BD = null; shownRound = null;
+    sessionStorage.setItem("pc_room", code);
+    $("roomCode").textContent = code;
+    show("board");
+    offs.push(Store.on(P("room"), r => {
       R = r;
       if (R) {
         if (R.timeLimit && document.activeElement !== $("setTime")) $("setTime").value = R.timeLimit;
         if (R.tileCap && document.activeElement !== $("setCap")) $("setCap").value = R.tileCap;
       }
       renderRoom(); renderPlayers(); renderTiles();
-    });
-    Store.on("players", p => { PL = p || {}; renderPlayers(); });
-    Store.on("board", b => { BD = b; renderTiles(); });
-    setInterval(tick, 250);
+    }));
+    offs.push(Store.on(P("players"), p => { PL = p || {}; renderPlayers(); }));
+    offs.push(Store.on(P("board"), b => { BD = b; renderTiles(); }));
   }
-  if (sessionStorage.getItem("pc_admin") === "1") open();
+  function leaveRoom() {
+    offs.forEach(f => f()); offs = []; CODE = null; RP = "";
+    sessionStorage.removeItem("pc_room"); $("reopenCode").value = ""; $("lobbyMsg").textContent = "";
+    show("lobby");
+  }
+  async function resetGame() {
+    await Store.set(P("board"), PC.newBoard());
+    await Store.set(P("players"), null);
+    await Store.set(P("room"), { gameId: String(Date.now()), status: "ready", round: 0, tileCap: tileCap(), timeLimit: timeLimit(), dice: null, roundStart: 0, createdAt: Store.ts() });
+  }
+
+  // ----- 방 만들기 / 다시 열기 / 닫기 -----
+  $("createRoom").onclick = async () => {
+    $("createRoom").disabled = true;
+    try {
+      // 하루 지난 방은 정리
+      const all = (await Store.get("rooms")) || {};
+      const now = Store.now();
+      for (const c in all) {
+        const t = all[c] && all[c].room && all[c].room.createdAt;
+        if (!t || now - t > 24 * 3600 * 1000) await Store.remove("rooms/" + c);
+      }
+      let code;
+      do { code = String(1000 + Math.floor(Math.random() * 9000)); } while (all[code] && all[code].room && now - (all[code].room.createdAt || 0) <= 24 * 3600 * 1000);
+      RP = "rooms/" + code + "/";
+      await resetGame();
+      enterRoom(code);
+    } catch (e) { console.error(e); $("lobbyMsg").textContent = "방을 만들지 못했어요. 다시 눌러 주세요."; }
+    $("createRoom").disabled = false;
+  };
+  $("reopen").onclick = async () => {
+    const code = $("reopenCode").value.trim();
+    if (!/^\d{4}$/.test(code)) return $("lobbyMsg").textContent = "4자리 방 코드를 입력하세요.";
+    const r = await Store.get("rooms/" + code + "/room");
+    if (!r) return $("lobbyMsg").textContent = "그런 방이 없어요.";
+    enterRoom(code);
+  };
+  $("reopenCode").onkeydown = e => { if (e.key === "Enter") $("reopen").click(); };
+  $("leaveRoom").onclick = leaveRoom;
+  $("closeRoom").onclick = async () => {
+    if (!confirm("방 " + CODE + "을(를) 닫을까요? 이 방의 점수 기록이 모두 지워지고 학생들은 더 이상 들어올 수 없어요.")) return;
+    const c = CODE; leaveRoom(); await Store.remove("rooms/" + c);
+  };
+
+  if (sessionStorage.getItem("pc_admin") === "1") { $("gate").classList.remove("active"); open(); }
   $("enter").onclick = () => {
     if ($("code").value.trim() !== C.ADMIN_PASSWORD) { $("gateMsg").textContent = "교사 코드가 틀렸어요."; return; }
     sessionStorage.setItem("pc_admin", "1"); open();
@@ -109,17 +184,15 @@
 
   // ----- 진행 버튼 -----
   $("newGame").onclick = async () => {
+    if (!CODE) return;
     if (R && R.gameId && R.status !== "ended" && !confirm("진행 중인 게임의 점수와 타일을 모두 지우고 새 게임을 열까요?")) return;
-    await Store.set("tiles", null);
-    await Store.set("board", PC.newBoard());
-    await Store.set("players", null);
-    await Store.set("room", { gameId: String(Date.now()), status: "ready", round: 0, tileCap: tileCap(), timeLimit: timeLimit(), dice: null, roundStart: 0 });
+    await resetGame();
   };
   $("roll").onclick = async () => {
-    if (!R || !R.gameId || R.status === "ended") return alert("먼저 ‘새 게임 열기’를 눌러 주세요.");
+    if (!R || !R.gameId || R.status === "ended") return alert("게임이 끝났어요. ‘새 게임 열기’를 눌러 주세요.");
     $("roll").disabled = true;
     // 지난 라운드에 한 명이라도 가져간 타일은 같은 색 더미에서 새로 뽑기
-    await Store.transaction("board", b => {
+    await Store.transaction(P("board"), b => {
       if (!b) return b;
       const c = b.c || {};
       for (const k in c) {
@@ -129,21 +202,20 @@
       b.c = {};
       return b;
     });
-    await Store.update("room", { round: (R.round || 0) + 1, dice: PC.rollDice(), roundStart: Store.ts(), timeLimit: timeLimit(), tileCap: tileCap(), status: "playing" });
+    await Store.update(P("room"), { round: (R.round || 0) + 1, dice: PC.rollDice(), roundStart: Store.ts(), timeLimit: timeLimit(), tileCap: tileCap(), status: "playing" });
     setTimeout(() => { $("roll").disabled = false; }, 800);
   };
-  $("stopRound").onclick = () => { if (R && R.status === "playing") Store.update("room", { status: "paused" }); };
+  $("stopRound").onclick = () => { if (R && R.status === "playing") Store.update(P("room"), { status: "paused" }); };
   $("endGame").onclick = () => {
     if (!R || !R.gameId) return;
-    if (confirm("게임을 끝낼까요? 학생 화면에 최종 순위가 표시돼요.")) Store.update("room", { status: "ended" });
+    if (confirm("게임을 끝낼까요? 학생 화면에 최종 순위가 표시돼요.")) Store.update(P("room"), { status: "ended" });
   };
-  $("setCap").onchange = () => { if (R && R.gameId) Store.update("room", { tileCap: tileCap() }); };
+  $("setCap").onchange = () => { if (R && R.gameId) Store.update(P("room"), { tileCap: tileCap() }); };
 
   // ----- 표시 -----
   const remaining = () => R && R.status === "playing" && R.roundStart
     ? Math.max(0, (R.roundStart + R.timeLimit * 1000 - Store.now()) / 1000) : 0;
 
-  let shownRound = null;
   function renderRoom() {
     $("aRound").textContent = R && R.round ? R.round : "-";
     const has = R && R.dice && R.round;
@@ -159,7 +231,7 @@
   }
   function tick() {
     let txt, ratio = 0;
-    if (!R || !R.gameId) txt = "‘새 게임 열기’를 눌러 시작하세요";
+    if (!R || !R.gameId) txt = "방 정보를 불러오는 중…";
     else if (R.status === "ended") txt = "🏁 게임 종료";
     else if (R.status === "ready" || !R.round) txt = "학생 입장 대기 중 · 준비되면 주사위를 굴리세요";
     else if (R.status === "paused") txt = "라운드 종료 · 다음 주사위를 굴리세요";
@@ -187,7 +259,7 @@
         <td><button class="del" data-id="${p.id}" title="삭제">🗑</button></td></tr>`;
     }).join("") || '<tr><td colspan="6">아직 입장한 학생이 없어요.</td></tr>';
     document.querySelectorAll(".del").forEach(b => b.onclick = () => {
-      if (confirm(b.dataset.id.replace("-", "반 ") + "번 기록을 지울까요?")) Store.remove("players/" + b.dataset.id);
+      if (confirm(b.dataset.id.replace("-", "반 ") + "번 기록을 지울까요?")) Store.remove(P("players/" + b.dataset.id));
     });
   }
 

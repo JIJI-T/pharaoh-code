@@ -36,7 +36,24 @@
   };
   $("logoutBtn").onclick = () => { sessionStorage.removeItem("pc_me"); me = null; $("pw").value = ""; show("login"); };
   $("practiceBtn").onclick = startPractice;
-  $("classBtn").onclick = startClass;
+  $("classBtn").onclick = () => {
+    $("roomInput").value = sessionStorage.getItem("pc_room") || "";
+    $("joinMsg").textContent = ""; show("join"); $("roomInput").focus();
+  };
+  $("joinBack").onclick = enterMenu;
+  $("roomInput").onkeydown = e => { if (e.key === "Enter") $("joinBtn").click(); };
+  $("joinBtn").onclick = async () => {
+    const code = $("roomInput").value.trim();
+    if (!/^\d{4}$/.test(code)) return $("joinMsg").textContent = "4자리 숫자를 입력하세요.";
+    $("joinBtn").disabled = true;
+    try {
+      const r = await Store.get("rooms/" + code + "/room");
+      if (!r) { $("joinMsg").textContent = "그런 방이 없어요. 코드를 다시 확인하세요."; return; }
+      sessionStorage.setItem("pc_room", code);
+      startClass(code);
+    } catch (e) { $("joinMsg").textContent = "연결이 불안정해요. 다시 눌러 주세요."; }
+    finally { $("joinBtn").disabled = false; }
+  };
   $("menuBtn").onclick = () => {
     if (mode === "practice" && P && P.round > 0 && !confirm("연습을 그만두고 메뉴로 갈까요?")) return;
     leave(); enterMenu();
@@ -231,12 +248,12 @@
   }
 
   // ================= 학급 플레이 =================
-  let R = null, B = null, mine = null, offs = [], classTick = null, lastRound = null, joining = false, endedShown = null;
+  let RP = "", R = null, B = null, mine = null, offs = [], classTick = null, lastRound = null, joining = false, endedShown = null;
 
-  function startClass() {
-    leave(); mode = "class";
+  function startClass(code) {
+    leave(); mode = "class"; RP = "rooms/" + code + "/";
     R = null; B = null; mine = null; lastRound = null; endedShown = null;
-    $("modeLabel").textContent = "학급";
+    $("modeLabel").textContent = "방 " + code;
     $("roundMax").textContent = "";
     $("roundNo").textContent = "-";
     $("score").textContent = 0;
@@ -246,9 +263,9 @@
     PC.paintBoard($("pyramid"), null);
     setDice(null);
     show("game");
-    offs.push(Store.on("room", onRoom));
-    offs.push(Store.on("board", b => { B = b; paint(); }));
-    offs.push(Store.on("players/" + me.key, onMine));
+    offs.push(Store.on(RP + "room", onRoom));
+    offs.push(Store.on(RP + "board", b => { B = b; paint(); }));
+    offs.push(Store.on(RP + "players/" + me.key, onMine));
     classTick = setInterval(updateClassTimer, 250);
   }
 
@@ -262,7 +279,7 @@
     if (!R || !R.gameId || joining) return;
     if (mine && mine.gameId === R.gameId) return;
     joining = true;
-    Store.set("players/" + me.key, { cls: me.cls, num: me.num, score: 0, tiles: 0, gameId: R.gameId, updatedAt: Store.ts() })
+    Store.set(RP + "players/" + me.key, { cls: me.cls, num: me.num, score: 0, tiles: 0, gameId: R.gameId, updatedAt: Store.ts() })
       .catch(e => console.error(e)).finally(() => { joining = false; });
   }
 
@@ -288,7 +305,7 @@
   }
 
   function updateClassTimer() {
-    if (!R || !R.gameId) { setTimerBar(0, "⌛ 선생님이 게임을 열 때까지 기다려요"); $("claimBtn").disabled = true; return; }
+    if (!R || !R.gameId) { setTimerBar(0, "🚪 방이 닫혔어요. 메뉴로 돌아가 주세요"); $("claimBtn").disabled = true; return; }
     const open = roundOpen();
     $("claimBtn").disabled = !open;
     if (R.status === "ready" || !R.round) setTimerBar(0, "⌛ 선생님이 주사위를 굴릴 때까지 기다려요");
@@ -305,7 +322,7 @@
     $("claimBtn").disabled = true;
     const limit = cap(), key = me.key, v = a.v;
     try {
-      const res = await Store.transaction("board", b => {
+      const res = await Store.transaction(RP + "board", b => {
         if (!b) return b;
         const i = (b.s || []).indexOf(v);
         if (i < 0) return;                         // 이미 다른 타일로 바뀜
@@ -324,7 +341,7 @@
         return msg("아쉬워요! 그 사이 " + v + "번 타일을 " + limit + "명이 다 가져가서 새 타일로 바뀌었어요.", "bad");
       }
       const gain = PC.pts(v);
-      await Store.transaction("players/" + key, p => {
+      await Store.transaction(RP + "players/" + key, p => {
         if (!p) return p;
         p.score = (p.score || 0) + gain; p.tiles = (p.tiles || 0) + 1; p.updatedAt = Date.now();
         p.got = p.got || {}; p.got["t" + v] = gain;
@@ -338,7 +355,7 @@
   }
 
   async function showClassEnd() {
-    const all = Object.values((await Store.get("players")) || {}).filter(p => p.gameId === R.gameId);
+    const all = Object.values((await Store.get(RP + "players")) || {}).filter(p => p.gameId === R.gameId);
     const my = (mine && mine.score) || 0;
     const rank = all.filter(p => (p.score || 0) > my).length + 1;
     $("endTitle").textContent = "학급 플레이 끝!";

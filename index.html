@@ -6,12 +6,12 @@
 <title>파라오 코드</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=6">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="config.js"></script>
-<script src="store.js"></script>
-<script src="common.js"></script>
+<script src="config.js?v=6"></script>
+<script src="store.js?v=6"></script>
+<script src="common.js?v=6"></script>
 </head>
 <body>
 
@@ -47,6 +47,19 @@
     </button>
     <button id="ruleBtn" class="btn ghost">게임 방법</button>
     <button id="logoutBtn" class="btn ghost small">다른 학생으로 입장</button>
+  </div>
+</section>
+
+<!-- 방 코드 입력 -->
+<section id="join" class="screen">
+  <div class="card center">
+    <div class="logo">🏛️</div>
+    <h1>학급 플레이</h1>
+    <p class="sub">선생님이 알려 준 4자리 방 코드를 입력하세요.</p>
+    <input id="roomInput" class="codeInput" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000">
+    <p id="joinMsg" class="msg bad"></p>
+    <button id="joinBtn" class="btn gold">방 입장하기</button>
+    <button id="joinBack" class="btn ghost">메뉴로</button>
   </div>
 </section>
 
@@ -119,6 +132,6 @@
   </div>
 </div>
 
-<script src="game.js"></script>
+<script src="game.js?v=6"></script>
 </body>
 </html>
