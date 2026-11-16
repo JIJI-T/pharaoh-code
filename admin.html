@@ -54,7 +54,7 @@
     <div class="stats">
       <div class="stat">참여 학생<b id="sCount">0</b></div>
       <div class="stat">평균 점수<b id="sAvg">0</b></div>
-      <div class="stat">가져간 타일<b id="sTiles">0</b></div>
+      <div class="stat">남은 타일<b id="sTiles">0</b></div>
     </div>
 
     <div class="twoCol">
@@ -66,7 +66,7 @@
         </table>
       </div>
       <div class="pyrBox">
-        <h2>타일 현황 <small>(숫자 = 가져간 인원)</small></h2>
+        <h2>피라미드 현황 <small>(모서리 = 가져간 인원)</small></h2>
         <div id="aPyramid" class="adminPyr"></div>
       </div>
     </div>
@@ -76,7 +76,7 @@
 <script>
 (function () {
   const C = window.APP_CONFIG, $ = id => document.getElementById(id);
-  let R = null, PL = {}, TL = {};
+  let R = null, PL = {}, BD = null;
 
   function open() {
     $("gate").classList.remove("active"); $("board").classList.add("active");
@@ -92,7 +92,7 @@
       renderRoom(); renderPlayers(); renderTiles();
     });
     Store.on("players", p => { PL = p || {}; renderPlayers(); });
-    Store.on("tiles", t => { TL = t || {}; renderTiles(); });
+    Store.on("board", b => { BD = b; renderTiles(); });
     setInterval(tick, 250);
   }
   if (sessionStorage.getItem("pc_admin") === "1") open();
@@ -110,6 +110,7 @@
   $("newGame").onclick = async () => {
     if (R && R.gameId && R.status !== "ended" && !confirm("진행 중인 게임의 점수와 타일을 모두 지우고 새 게임을 열까요?")) return;
     await Store.set("tiles", null);
+    await Store.set("board", PC.newBoard());
     await Store.set("players", null);
     await Store.set("room", { gameId: String(Date.now()), status: "ready", round: 0, tileCap: tileCap(), timeLimit: timeLimit(), dice: null, roundStart: 0 });
   };
@@ -176,15 +177,10 @@
   }
 
   function renderTiles() {
-    const cap = (R && R.tileCap) || tileCap(); let total = 0;
-    for (let v = 1; v <= 60; v++) {
-      const el = PC.tile($("aPyramid"), v); if (!el) continue;
-      const c = (TL["t" + v] && TL["t" + v].count) || 0; total += c;
-      el.querySelector("i").textContent = c ? c : "";
-      el.classList.toggle("full", c >= cap);
-      el.title = v + "번: " + c + "/" + cap + "명";
-    }
-    $("sTiles").textContent = total;
+    PC.paintBoard($("aPyramid"), BD, { cap: (R && R.tileCap) || tileCap() });
+    let left = 0;
+    if (BD) { left = (BD.s || []).filter(Boolean).length; PC.LEVELS.forEach((L, li) => left += PC.pileLeft(BD, li)); }
+    $("sTiles").textContent = BD ? left : "-";
   }
 })();
 </script>
