@@ -11,9 +11,3 @@
 - 피라미드 10칸(노랑 4 · 파랑 3 · 빨강 2 · 검정 1), 숫자 타일 48장. 가져간 칸은 같은 색 더미에서 다시 채워요.
 - 점수: 노랑 1~2 · 파랑 3~4 · 빨강 5~6 · 검정 7~8점 (같은 색에서 만들기 어려운 절반이 높은 점수, `common.js`의 HIGH 목록)
 - 비밀번호와 기본값은 `config.js`에서 바꿀 수 있어요.
-## 1. 깃허브에 올리기 (GitHub Pages)
-1. github.com 로그인 → 오른쪽 위 **+ → New repository** → 이름 `pharaoh-code`, **Public** → Create
-2. **uploading an existing file** 클릭 → 압축을 푼 파일 8개(index.html, admin.html, game.js, common.js, store.js, style.css, config.js, README.md)를 끌어다 놓기 → Commit changes
-3. **Settings → Pages** → Branch: `main`, 폴더 `/ (root)` → Save
-4. 1~2분 뒤 주소가 생겨요: `https://아이디.github.io/pharaoh-code/`
-   - 교사 화면: `https://아이디.github.io/pharaoh-code/admin.html`
