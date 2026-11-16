@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>파라오 코드 · 교사(방장) 화면</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="config.js"></script>
+<script src="store.js"></script>
+<script src="common.js"></script>
+</head>
+<body>
+
+<section id="gate" class="screen active">
+  <div class="card center">
+    <div class="logo">👩‍🏫</div>
+    <h1>교사(방장) 화면</h1>
+    <label>교사 코드<input id="code" type="password" inputmode="numeric" autocomplete="off"></label>
+    <p id="gateMsg" class="msg bad"></p>
+    <button id="enter" class="btn gold">들어가기</button>
+    <a href="index.html" class="tlink">← 학생 화면</a>
+  </div>
+</section>
+
+<section id="board" class="screen">
+  <div class="admin">
+    <div class="bar">
+      <h1>🔺 학급 플레이 · 방장</h1>
+      <span id="live" class="liveTag"></span>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlTop">
+        <div class="roundBox">라운드<b id="aRound">-</b></div>
+        <div class="dice" id="aDice"></div>
+        <div class="roundBox">남은 시간<b id="aTime">-</b></div>
+      </div>
+      <div class="timerBar"><div id="aFill"></div><span id="aStatus"></span></div>
+      <div class="settings">
+        <label>라운드 제한 시간(초)<input id="setTime" type="number" min="10" max="600" step="5"></label>
+        <label>타일당 최대 인원<input id="setCap" type="number" min="1" max="50"></label>
+      </div>
+      <div class="ctrlBtns">
+        <button id="newGame" class="sbtn">▶ 새 게임 열기</button>
+        <button id="roll" class="sbtn big">🎲 주사위 굴리기</button>
+        <button id="stopRound" class="sbtn gray">⏹ 라운드 종료</button>
+        <button id="endGame" class="sbtn red">🏁 게임 끝내기</button>
+      </div>
+      <p class="hint">새 게임 열기 → 학생들이 ‘학급 플레이’로 입장 → 주사위 굴리기를 누를 때마다 새 라운드가 시작돼요.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat">참여 학생<b id="sCount">0</b></div>
+      <div class="stat">평균 점수<b id="sAvg">0</b></div>
+      <div class="stat">가져간 타일<b id="sTiles">0</b></div>
+    </div>
+
+    <div class="twoCol">
+      <div class="scoreBox">
+        <h2>실시간 점수</h2>
+        <table class="tbl">
+          <thead><tr><th>순위</th><th>반</th><th>번호</th><th>점수</th><th>타일</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="pyrBox">
+        <h2>타일 현황 <small>(숫자 = 가져간 인원)</small></h2>
+        <div id="aPyramid" class="adminPyr"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const C = window.APP_CONFIG, $ = id => document.getElementById(id);
+  let R = null, PL = {}, TL = {};
+
+  function open() {
+    $("gate").classList.remove("active"); $("board").classList.add("active");
+    $("live").textContent = Store.online ? "● 실시간 연결됨" : "체험 모드(이 브라우저만)";
+    $("setTime").value = C.CLASS_SECONDS; $("setCap").value = C.CLASS_TILE_CAP;
+    PC.buildPyramid($("aPyramid"));
+    Store.on("room", r => {
+      R = r;
+      if (R) {
+        if (R.timeLimit && document.activeElement !== $("setTime")) $("setTime").value = R.timeLimit;
+        if (R.tileCap && document.activeElement !== $("setCap")) $("setCap").value = R.tileCap;
+      }
+      renderRoom(); renderPlayers(); renderTiles();
+    });
+    Store.on("players", p => { PL = p || {}; renderPlayers(); });
+    Store.on("tiles", t => { TL = t || {}; renderTiles(); });
+    setInterval(tick, 250);
+  }
+  if (sessionStorage.getItem("pc_admin") === "1") open();
+  $("enter").onclick = () => {
+    if ($("code").value.trim() !== C.ADMIN_PASSWORD) { $("gateMsg").textContent = "교사 코드가 틀렸어요."; return; }
+    sessionStorage.setItem("pc_admin", "1"); open();
+  };
+  $("code").onkeydown = e => { if (e.key === "Enter") $("enter").click(); };
+
+  const num = (id, lo, hi, def) => { const v = parseInt($(id).value); return isNaN(v) ? def : Math.max(lo, Math.min(hi, v)); };
+  const timeLimit = () => num("setTime", 10, 600, C.CLASS_SECONDS);
+  const tileCap = () => num("setCap", 1, 50, C.CLASS_TILE_CAP);
+
+  // ----- 진행 버튼 -----
+  $("newGame").onclick = async () => {
+    if (R && R.gameId && R.status !== "ended" && !confirm("진행 중인 게임의 점수와 타일을 모두 지우고 새 게임을 열까요?")) return;
+    await Store.set("tiles", null);
+    await Store.set("players", null);
+    await Store.set("room", { gameId: String(Date.now()), status: "ready", round: 0, tileCap: tileCap(), timeLimit: timeLimit(), dice: null, roundStart: 0 });
+  };
+  $("roll").onclick = async () => {
+    if (!R || !R.gameId || R.status === "ended") return alert("먼저 ‘새 게임 열기’를 눌러 주세요.");
+    $("roll").disabled = true;
+    await Store.update("room", { round: (R.round || 0) + 1, dice: PC.rollDice(), roundStart: Store.ts(), timeLimit: timeLimit(), tileCap: tileCap(), status: "playing" });
+    setTimeout(() => { $("roll").disabled = false; }, 800);
+  };
+  $("stopRound").onclick = () => { if (R && R.status === "playing") Store.update("room", { status: "paused" }); };
+  $("endGame").onclick = () => {
+    if (!R || !R.gameId) return;
+    if (confirm("게임을 끝낼까요? 학생 화면에 최종 순위가 표시돼요.")) Store.update("room", { status: "ended" });
+  };
+  $("setCap").onchange = () => { if (R && R.gameId) Store.update("room", { tileCap: tileCap() }); };
+
+  // ----- 표시 -----
+  const remaining = () => R && R.status === "playing" && R.roundStart
+    ? Math.max(0, (R.roundStart + R.timeLimit * 1000 - Store.now()) / 1000) : 0;
+
+  function renderRoom() {
+    $("aRound").textContent = R && R.round ? R.round : "-";
+    const box = $("aDice"); box.innerHTML = "";
+    PC.DICE_SIDES.forEach((s, i) => {
+      const d = document.createElement("div");
+      const has = R && R.dice && R.round;
+      d.className = "die d" + s + (has ? " roll" : "");
+      d.innerHTML = (has ? R.dice[i] : "?") + "<small>" + s + "면</small>";
+      box.appendChild(d);
+    });
+  }
+  function tick() {
+    let txt, ratio = 0;
+    if (!R || !R.gameId) txt = "‘새 게임 열기’를 눌러 시작하세요";
+    else if (R.status === "ended") txt = "🏁 게임 종료";
+    else if (R.status === "ready" || !R.round) txt = "학생 입장 대기 중 · 준비되면 주사위를 굴리세요";
+    else if (R.status === "paused") txt = "라운드 종료 · 다음 주사위를 굴리세요";
+    else {
+      const left = remaining(); ratio = left / R.timeLimit;
+      txt = left > 0 ? "라운드 진행 중" : "⏰ 시간 끝 · 다음 주사위를 굴리세요";
+    }
+    $("aFill").style.width = ratio * 100 + "%";
+    $("aStatus").textContent = txt;
+    $("aTime").textContent = R && R.status === "playing" ? Math.ceil(remaining()) + "초" : "-";
+  }
+
+  function renderPlayers() {
+    const gid = R && R.gameId;
+    const list = Object.entries(PL).map(([id, v]) => Object.assign({ id }, v)).filter(p => p.gameId === gid);
+    list.sort((a, b) => (b.score || 0) - (a.score || 0) || a.cls - b.cls || a.num - b.num);
+    $("sCount").textContent = list.length;
+    $("sAvg").textContent = list.length ? (list.reduce((t, p) => t + (p.score || 0), 0) / list.length).toFixed(1) : 0;
+    let rank = 0, prev = null;
+    $("rows").innerHTML = list.map((p, i) => {
+      const s = p.score || 0; if (s !== prev) { rank = i + 1; prev = s; }
+      const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank;
+      return `<tr class="${rank === 1 && s > 0 ? "top1" : ""}"><td>${medal}</td><td>${p.cls}</td><td>${p.num}</td>
+        <td><b>${s}</b></td><td>${p.tiles || 0}</td>
+        <td><button class="del" data-id="${p.id}" title="삭제">🗑</button></td></tr>`;
+    }).join("") || '<tr><td colspan="6">아직 입장한 학생이 없어요.</td></tr>';
+    document.querySelectorAll(".del").forEach(b => b.onclick = () => {
+      if (confirm(b.dataset.id.replace("-", "반 ") + "번 기록을 지울까요?")) Store.remove("players/" + b.dataset.id);
+    });
+  }
+
+  function renderTiles() {
+    const cap = (R && R.tileCap) || tileCap(); let total = 0;
+    for (let v = 1; v <= 60; v++) {
+      const el = PC.tile($("aPyramid"), v); if (!el) continue;
+      const c = (TL["t" + v] && TL["t" + v].count) || 0; total += c;
+      el.querySelector("i").textContent = c ? c : "";
+      el.classList.toggle("full", c >= cap);
+      el.title = v + "번: " + c + "/" + cap + "명";
+    }
+    $("sTiles").textContent = total;
+  }
+})();
+</script>
+</body>
+</html>
