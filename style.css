@@ -119,22 +119,3 @@ input{display:block;width:100%;padding:12px;font-size:18px;border:2px solid var(
 .ctrlTop .die{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .adminPyr .tile{width:min(2.9vw,32px)}
 .ctrlBtns .sbtn{margin:0}
-
-/* ===== v3: 규칙서 피라미드 ===== */
-.die.d8{background:#b23a2e}.die.d10{background:#2e6b3a}.die.d12{background:#1f4e8c}
-#pyramid,.adminPyr{gap:6px}
-.prow{display:flex;align-items:center;justify-content:center;gap:6px}
-.pile{width:46px;font-size:11px;color:#f5d76e;text-align:center;flex:none}
-.slot{position:relative;width:min(18vw,82px);height:min(15vw,64px);border-radius:9px;background:linear-gradient(#f1dba4,#d9b56a);border:4px solid;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 0 #0005;transition:transform .2s}
-.slot b{font-size:min(7vw,30px);line-height:1;color:#3b2508}
-.slot em{font-style:normal;font-size:min(2.6vw,11px);font-weight:700;color:#6b4a12;margin-top:2px}
-.slot i{position:absolute;top:1px;right:4px;font-style:normal;font-size:min(2.4vw,10px);font-weight:800;color:#7a1f12}
-.slot.lv0{border-color:#e6b800}.slot.lv1{border-color:#1f5fbf}.slot.lv2{border-color:#c0392b}.slot.lv3{border-color:#111}
-.slot.empty{background:#0003;box-shadow:none;cursor:default}
-.slot.mine{background:linear-gradient(#cfe0ff,#9bb9ee)}
-.slot.hit{transform:scale(1.15)}
-.adminPyr .slot{width:min(9vw,96px);height:min(7vw,72px)}
-.adminPyr .slot b{font-size:min(3.4vw,34px)}
-.adminPyr .slot em,.adminPyr .slot i{font-size:12px}
-@media(max-width:760px){.adminPyr .slot{width:18vw;height:15vw}.adminPyr .slot b{font-size:7vw}}
-@media(max-width:520px){#pyramid .prow{gap:4px}#pyramid .pile{width:30px;font-size:10px}#pyramid .slot{width:17vw}}

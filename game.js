@@ -1,7 +1,6 @@
 (function () {
   const C = window.APP_CONFIG, $ = id => document.getElementById(id);
   const SYM = { "+": "+", "-": "−", "*": "×", "/": "÷", "(": "(", ")": ")" };
-  const MIN_DICE = 2; // 규칙서: 주사위 2개 또는 3개 사용
   let me = null, mode = null;
 
   // ================= 공통 화면 =================
@@ -20,7 +19,10 @@
   $("ruleBtn").onclick = () => $("ruleModal").classList.add("show");
 
   // ================= 로그인 / 메뉴 =================
-  function enterMenu() { $("menuWho").textContent = me.cls + "반 " + me.num + "번"; show("menu"); }
+  function enterMenu() {
+    $("menuWho").textContent = me.cls + "반 " + me.num + "번";
+    show("menu");
+  }
   try { const saved = JSON.parse(sessionStorage.getItem("pc_me")); if (saved) { me = saved; enterMenu(); } } catch (e) {}
 
   $("loginBtn").onclick = () => {
@@ -47,7 +49,7 @@
   $("claimBtn").onclick = () => mode === "practice" ? claimPractice() : claimClass();
 
   function leave() {
-    if (P) clearInterval(P.timer); P = null;
+    clearInterval(P && P.timer); P = null;
     offs.forEach(f => f()); offs = []; clearInterval(classTick);
     mode = null;
   }
@@ -91,7 +93,7 @@
     if (!keepDice) renderDice();
     $("expr").innerHTML = pad.tokens.length
       ? pad.tokens.map(t => t.t === "n" ? t.v : SYM[t.v]).join(" ")
-      : '<span class="ph">' + (pad.dice ? "주사위 2~3개와 기호를 눌러 식을 만드세요" : "주사위를 기다리는 중…") + "</span>";
+      : '<span class="ph">' + (pad.dice ? "주사위 3개와 기호를 눌러 식을 만드세요" : "주사위를 기다리는 중…") + "</span>";
     const r = evaluate();
     $("result").textContent = "= " + (r.ok ? fmt(r.val) : "?");
     msg("");
@@ -122,46 +124,39 @@
     catch (e) { return { ok: false, err: typeof e === "string" ? e : "식이 올바르지 않아요." }; }
   }
 
-  // 식이 올바르고 피라미드에 그 숫자가 있으면 칸 번호, 아니면 null
-  function readAnswer(board) {
+  // 올바른 답이면 숫자, 아니면 null
+  function readAnswer() {
     const r = evaluate();
     if (!r.ok) { msg(r.err, "bad"); return null; }
-    if (pad.used.filter(Boolean).length < MIN_DICE) { msg("주사위를 2개 이상 써야 해요!", "bad"); return null; }
-    if (r.val.d !== 1 || r.val.n < 1) { msg("결과가 자연수가 아니에요. (" + fmt(r.val) + ")", "bad"); return null; }
-    const v = r.val.n, i = ((board && board.s) || []).indexOf(v);
-    if (i < 0) { msg(v + "은(는) 지금 피라미드에 없는 숫자예요.", "bad"); return null; }
-    return { v, i };
+    if (pad.used.filter(Boolean).length < 3) { msg("주사위 3개를 모두 써야 해요!", "bad"); return null; }
+    if (r.val.d !== 1) { msg("결과가 자연수가 아니에요. (" + fmt(r.val) + ")", "bad"); return null; }
+    const v = r.val.n;
+    if (v < 1 || v > 60) { msg(v + "은(는) 피라미드에 없는 수예요.", "bad"); return null; }
+    return v;
   }
-  function flash(i) { const t = $("pyramid").querySelector('[data-slot="' + i + '"]'); if (!t) return; t.classList.add("hit"); setTimeout(() => t.classList.remove("hit"), 600); }
-  function slotInfo(board, i, cap) {
-    const n = board && board.s && board.s[i];
-    if (!n) return msg("빈칸이에요. 이 색의 더미가 다 떨어졌어요.");
-    const c = board.c && board.c["s" + i];
-    const cnt = c && c.t === n && c.by ? Object.keys(c.by).length : 0;
-    msg(PC.LEVELS[PC.SLOT_LEVEL[i]].name + " " + n + "번 타일 · " + PC.pts(n) + "점" + (cap ? " · " + cnt + "/" + cap + "명 획득" : ""));
-  }
+  function flash(v) { const t = PC.tile($("pyramid"), v); t.classList.add("hit"); setTimeout(() => t.classList.remove("hit"), 600); }
 
   // ================= 개인 플레이 =================
   let P = null;
   function startPractice() {
     leave(); mode = "practice";
-    P = { round: 0, score: 0, count: 0, board: PC.newBoard(), timer: null };
+    P = { round: 0, score: 0, taken: new Set(), timer: null };
     $("modeLabel").textContent = "개인";
     $("roundMax").textContent = "/" + C.PRACTICE_ROUNDS;
     $("score").textContent = 0;
     $("nextBtn").style.display = ""; $("claimBtn").disabled = false;
-    PC.buildPyramid($("pyramid"), i => slotInfo(P.board, i));
-    PC.paintBoard($("pyramid"), P.board);
+    PC.buildPyramid($("pyramid"));
     show("game");
     practiceNext();
   }
   function practiceNext() {
     clearInterval(P.timer);
-    if (P.round >= C.PRACTICE_ROUNDS || PC.boardEmpty(P.board)) return endPractice();
+    if (P.round >= C.PRACTICE_ROUNDS) return endPractice();
     P.round++;
     $("roundNo").textContent = P.round;
     setDice(PC.rollDice());
-    const T = C.PRACTICE_SECONDS; let left = T;
+    let left = C.PRACTICE_SECONDS;
+    const T = C.PRACTICE_SECONDS;
     setTimerBar(1, "⏳ " + left + "초");
     P.timer = setInterval(() => {
       left--; setTimerBar(left / T, "⏳ " + left + "초");
@@ -173,46 +168,41 @@
     }, 1000);
   }
   function claimPractice() {
-    const a = readAnswer(P.board); if (!a) return;
-    const gain = PC.pts(a.v);
-    P.score += gain; P.count++;
-    PC.refill(P.board, a.i);
-    PC.paintBoard($("pyramid"), P.board);
+    const v = readAnswer(); if (v == null) return;
+    if (P.taken.has(v)) return msg(v + "번 타일은 이미 가져왔어요.", "bad");
+    P.taken.add(v); P.score += PC.pts(v);
     $("score").textContent = P.score;
-    flash(a.i); clearExpr();
-    msg("🎉 " + a.v + "번 타일 획득! +" + gain + "점", "ok");
-    if (PC.boardEmpty(P.board)) setTimeout(endPractice, 1200);
+    PC.tile($("pyramid"), v).classList.add("taken"); flash(v);
+    clearExpr(); msg("🎉 " + v + "번 타일 획득! +" + PC.pts(v) + "점", "ok");
   }
   function endPractice() {
-    if (!P) return;
     clearInterval(P.timer);
     const k = "pc_best_" + me.key;
     const best = Math.max(P.score, parseInt(localStorage.getItem(k) || "0"));
     try { localStorage.setItem(k, best); } catch (e) {}
     $("endTitle").textContent = "연습 끝!";
     $("finalScore").textContent = P.score;
-    $("finalInfo").textContent = "가져온 타일 " + P.count + "장 · 내 연습 최고 점수 " + best + "점";
+    $("finalInfo").textContent = "가져온 타일 " + P.taken.size + "장 · 내 연습 최고 점수 " + best + "점";
     $("againBtn").style.display = "";
     show("end");
   }
 
   // ================= 학급 플레이 =================
-  let R = null, B = null, mine = null, offs = [], classTick = null, lastRound = null, joining = false, endedShown = null;
+  let R = null, TILES = {}, mine = null, offs = [], classTick = null, lastRound = null, joining = false, endedShown = null;
 
   function startClass() {
     leave(); mode = "class";
-    R = null; B = null; mine = null; lastRound = null; endedShown = null;
+    R = null; TILES = {}; mine = null; lastRound = null; endedShown = null;
     $("modeLabel").textContent = "학급";
     $("roundMax").textContent = "";
     $("roundNo").textContent = "-";
     $("score").textContent = 0;
     $("nextBtn").style.display = "none";
-    PC.buildPyramid($("pyramid"), i => slotInfo(B, i, cap()));
-    PC.paintBoard($("pyramid"), null);
+    PC.buildPyramid($("pyramid"), tileInfo);
     setDice(null);
     show("game");
     offs.push(Store.on("room", onRoom));
-    offs.push(Store.on("board", b => { B = b; paint(); }));
+    offs.push(Store.on("tiles", t => { TILES = t || {}; paintTiles(); }));
     offs.push(Store.on("players/" + me.key, onMine));
     classTick = setInterval(updateClassTimer, 250);
   }
@@ -221,7 +211,6 @@
   const remaining = () => R && R.status === "playing" && R.roundStart
     ? Math.max(0, (R.roundStart + R.timeLimit * 1000 - Store.now()) / 1000) : 0;
   const roundOpen = () => remaining() > 0;
-  const paint = () => PC.paintBoard($("pyramid"), B, { cap: cap(), me: me.key });
 
   function ensureJoined() {
     if (!R || !R.gameId || joining) return;
@@ -238,8 +227,11 @@
     ensureJoined();
     $("roundNo").textContent = R.round || "-";
     const roundKey = R.gameId + ":" + (R.round || 0);
-    if (roundKey !== lastRound) { lastRound = roundKey; setDice(R.dice && R.round ? R.dice : null); }
-    paint();
+    if (roundKey !== lastRound) {
+      lastRound = roundKey;
+      setDice(R.dice && R.round ? R.dice : null);
+    }
+    paintTiles();
     if (R.status === "ended" && endedShown !== R.gameId) { endedShown = R.gameId; showClassEnd(); }
     if (R.status !== "ended" && $("end").classList.contains("active") && mode === "class") show("game");
   }
@@ -248,6 +240,22 @@
     mine = rec;
     $("score").textContent = rec && R && rec.gameId === R.gameId ? (rec.score || 0) : 0;
     if (R && R.gameId && (!rec || rec.gameId !== R.gameId)) ensureJoined();
+  }
+
+  function paintTiles() {
+    const box = $("pyramid");
+    for (let v = 1; v <= 60; v++) {
+      const el = PC.tile(box, v); if (!el) continue;
+      const rec = TILES["t" + v]; const c = rec ? rec.count || 0 : 0;
+      const isMine = !!(rec && rec.by && rec.by[me.key]);
+      el.classList.toggle("taken", isMine);
+      el.classList.toggle("full", !isMine && c >= cap());
+      el.querySelector("i").textContent = c ? c : "";
+    }
+  }
+  function tileInfo(v) {
+    const rec = TILES["t" + v]; const c = rec ? rec.count || 0 : 0;
+    msg(v + "번 타일 (" + PC.pts(v) + "점): " + c + "/" + cap() + "명 획득", "");
   }
 
   function updateClassTimer() {
@@ -262,37 +270,33 @@
 
   async function claimClass() {
     if (!roundOpen()) return msg("지금은 타일을 가져올 수 없어요.", "bad");
-    const a = readAnswer(B); if (!a) return;
-    const c0 = B.c && B.c["s" + a.i];
-    if (c0 && c0.t === a.v && c0.by && c0.by[me.key]) return msg(a.v + "번 타일은 이미 가져왔어요.", "bad");
+    const v = readAnswer(); if (v == null) return;
+    const rec = TILES["t" + v];
+    if (rec && rec.by && rec.by[me.key]) return msg(v + "번 타일은 이미 가져왔어요.", "bad");
+    if (rec && (rec.count || 0) >= cap()) return msg(v + "번 타일은 이미 " + cap() + "명이 가져갔어요.", "bad");
     $("claimBtn").disabled = true;
-    const limit = cap(), key = me.key, v = a.v;
+    const limit = cap();
     try {
-      const res = await Store.transaction("board", b => {
-        if (!b) return b;
-        const i = (b.s || []).indexOf(v);
-        if (i < 0) return;                         // 이미 다른 타일로 바뀜
-        b.c = b.c || {};
-        const k = "s" + i;
-        let c = b.c[k];
-        if (!c || c.t !== v) c = { t: v, by: {} };
-        c.by = c.by || {};
-        if (c.by[key]) return;                     // 이미 가져감
-        c.by[key] = true;
-        if (Object.keys(c.by).length >= limit) { delete b.c[k]; PC.refill(b, i); }  // 정원 차면 새 타일
-        else b.c[k] = c;
-        return b;
+      const res = await Store.transaction("tiles/t" + v, cur => {
+        cur = cur || { count: 0, by: {} };
+        if (!cur.by) cur.by = {};
+        if (cur.by[me.key]) return;
+        if ((cur.count || 0) >= limit) return;
+        cur.count = (cur.count || 0) + 1;
+        cur.by[me.key] = true;
+        return cur;
       });
-      if (!res.committed || !res.value) {
-        return msg("아쉬워요! 그 사이 " + v + "번 타일을 " + limit + "명이 다 가져가서 새 타일로 바뀌었어요.", "bad");
+      if (!res.committed) {
+        const mineAlready = res.value && res.value.by && res.value.by[me.key];
+        return msg(mineAlready ? v + "번 타일은 이미 가져왔어요." : "아쉬워요! " + v + "번 타일은 " + limit + "명이 먼저 가져갔어요.", "bad");
       }
       const gain = PC.pts(v);
-      await Store.transaction("players/" + key, p => {
+      await Store.transaction("players/" + me.key, p => {
         if (!p) return p;
         p.score = (p.score || 0) + gain; p.tiles = (p.tiles || 0) + 1; p.updatedAt = Date.now();
         return p;
       });
-      flash(a.i); clearExpr();
+      flash(v); clearExpr();
       msg("🎉 " + v + "번 타일 획득! +" + gain + "점", "ok");
     } catch (e) {
       console.error(e); msg("연결이 불안정해요. 다시 눌러 주세요.", "bad");
@@ -301,6 +305,7 @@
 
   async function showClassEnd() {
     const all = Object.values((await Store.get("players")) || {}).filter(p => p.gameId === R.gameId);
+    all.sort((a, b) => (b.score || 0) - (a.score || 0));
     const my = (mine && mine.score) || 0;
     const rank = all.filter(p => (p.score || 0) > my).length + 1;
     $("endTitle").textContent = "학급 플레이 끝!";
