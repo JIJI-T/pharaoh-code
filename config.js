@@ -15,11 +15,11 @@ window.APP_CONFIG = {
 // Firebase 설정 — README.md 안내대로 값을 붙여 넣으세요.
 // 비워 두면 '체험 모드'(같은 브라우저 안에서만 공유)로 동작합니다.
 window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+   apiKey: "AIzaSyBP23lUFmNBY1dvfBI0VB64ccGIBOUa32o",
+  authDomain: "paraohcode.firebaseapp.com",
+  databaseURL: "https://paraohcode-default-rtdb.firebaseio.com",
+  projectId: "paraohcode",
+  storageBucket: "paraohcode.firebasestorage.app",
+  messagingSenderId: "742862859775",
+  appId: "1:742862859775:web:c751ae876996f07edc0bca"
 };
